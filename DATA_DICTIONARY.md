@@ -20,20 +20,20 @@ This document describes the data model for the IPD Nurse Rostering optimization 
          │    │                    │                         │
          │    │    ┌───────────────┴───────────────┐         │
          ▼    ▼    ▼                               │         │
-┌─────────────────────────────────────┐           │         │
-│            dim_nurses               │           │         │
-│                                     │           │         │
-│  nurse_id (PK)                      │           │         │
-│  primary_ward_id (FK) ─────────────►│           │         │
-│  contracted_hours_week              │           │         │
-│  seniority, skill_level             │           │         │
-│  preferences (night/day)            │           │         │
-└──────────────┬──────────────────────┘           │         │
+┌─────────────────────────────────────┐            │         │
+│            dim_nurses               │            │         │
+│                                     │            │         │
+│  nurse_id (PK)                      │            │         │
+│  primary_ward_id (FK) ─────────────►│            │         │
+│  contracted_hours_week              │            │         │
+│  seniority, skill_level             │            │         │
+│  preferences (night/day)            │            │         │
+└──────────────┬──────────────────────┘            │         │
                │                                   │         │
                │                                   │         │
-    ┌──────────┴──────────┬───────────────────────┤         │
-    │                     │                       │         │
-    ▼                     ▼                       ▼         ▼
+    ┌──────────┴──────────┬────────────────────────┤         │
+    │                     │                        │         │
+    ▼                     ▼                        ▼         ▼
 ┌───────────────┐  ┌──────────────┐  ┌─────────────────────────────┐
 │fact_unavail   │  │fact_shift_req│  │ fact_nurse_certifications   │
 │               │  │              │  │                             │
