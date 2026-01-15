@@ -27,10 +27,12 @@ def generate_mock_nurses(config, out_dir: str, num_nurses=16, seed=0):
         level = random.randint(1, 4)
         role = "RN_IPD"
         skill = random.choice(config.SKILLS)
+        phone = f"08{i:08d}"  # dummy phone number
         nurses.append(
             {
                 "nurse_id": nurse_id,
                 "name": f"Nurse{i+1}",
+                "phone_number": phone,
                 "level": level,
                 "role": role,
                 "skill": skill,
@@ -69,6 +71,8 @@ def generate_mock_preferences(
                 col.append("BD")
             elif r < 0.08:
                 col.append("PUB")
+            elif r < 0.28:
+                col.append("X")
             else:
                 col.append(random.choice(working_shifts))
         data[str(d)] = col

@@ -70,14 +70,38 @@ def add_block_skill_coverage(model, x, nurses_df, days, coverage_blocks, cfg):
                     model.Add(sum(terms) >= required)
 
 
-def add_hours_constraints(model, x, nurses_df, days, cfg):
+def add_hours_constraints_and_excess(model, x, nurses_df, days, cfg):
+    """
+    - Enforce monthly min/max hours per nurse.
+    - Create h_n (total hours) and e_n (excess over 184) for later use.
+    Returns:
+        total_hours_vars: dict[n_idx] -> IntVar
+        excess_hours_vars: dict[n_idx] -> IntVar
+    """
     S = len(cfg.SHIFT_NAMES)
+    total_hours_vars = {}
+    excess_hours_vars = {}
+
     for n_idx, row in nurses_df.iterrows():
         min_h = int(row["monthly_min_hours"])
         max_h = int(row["monthly_max_hours"])
-        total_hours = sum(cfg.SHIFT_HOURS[cfg.SHIFT_NAMES[s]] * x[n_idx, d, s] for d in range(days) for s in range(S))
+        threshold = 184  # business rule for “expected” hours
+
+        total_hours = model.NewIntVar(0, max_h * 2, f"hours_{n_idx}")
+        model.Add(
+            total_hours
+            == sum(cfg.SHIFT_HOURS[cfg.SHIFT_NAMES[s]] * x[n_idx, d, s] for d in range(days) for s in range(S))
+        )
         model.Add(total_hours >= min_h)
         model.Add(total_hours <= max_h)
+        total_hours_vars[n_idx] = total_hours
+
+        excess = model.NewIntVar(0, max_h * 2, f"excess_{n_idx}")
+        model.Add(excess >= total_hours - threshold)
+        model.Add(excess >= 0)
+        excess_hours_vars[n_idx] = excess
+
+    return total_hours_vars, excess_hours_vars
 
 
 def add_leave_constraints(model, x, nurses_df, prefs_df, days, cfg):
@@ -142,7 +166,20 @@ def add_days_off_rules(model, x, num_nurses, days, cfg):
             model.Add(off_next == 1).OnlyEnforceIf(all_work)
 
 
-def add_preference_fair_objective(model, x, nurses_df, prefs_df, days, cfg):
+def add_preference_fair_objective(
+    model,
+    x,
+    nurses_df,
+    prefs_df,
+    days,
+    cfg,
+    excess_hours_vars,
+):
+    """
+    Objective:
+      1) Minimize sum of excess hours (primary).
+      2) Minimize preference penalties and their unfairness (secondary).
+    """
     shift_index = {name: i for i, name in enumerate(cfg.SHIFT_NAMES)}
     N = len(nurses_df)
 
@@ -174,7 +211,12 @@ def add_preference_fair_objective(model, x, nurses_df, prefs_df, days, cfg):
         model.Add(dev >= avg_penalty - p)
         deviations.append(dev)
 
-    model.Minimize(cfg.PREFERENCE_WEIGHT * sum(penalties) + cfg.FAIRNESS_WEIGHT * sum(deviations))
+    # Weights: hours more important than preferences
+    W_HOURS = 10_000
+    W_PREF = cfg.PREFERENCE_WEIGHT
+    W_FAIR = cfg.FAIRNESS_WEIGHT
+
+    model.Minimize(W_HOURS * sum(excess_hours_vars.values()) + W_PREF * sum(penalties) + W_FAIR * sum(deviations))
 
 
 def solve_month(
@@ -198,11 +240,11 @@ def solve_month(
     x = create_variables(model, num_nurses, days, cfg)
     add_one_shift_per_day(model, x, num_nurses, days, cfg)
     add_block_skill_coverage(model, x, nurses_df, days, coverage_blocks, cfg)
-    add_hours_constraints(model, x, nurses_df, days, cfg)
+    total_hours_vars, excess_hours_vars = add_hours_constraints_and_excess(model, x, nurses_df, days, cfg)
     add_leave_constraints(model, x, nurses_df, prefs_df, days, cfg)
     add_forbidden_transitions(model, x, num_nurses, days, cfg)
     add_days_off_rules(model, x, num_nurses, days, cfg)
-    add_preference_fair_objective(model, x, nurses_df, prefs_df, days, cfg)
+    add_preference_fair_objective(model, x, nurses_df, prefs_df, days, cfg, excess_hours_vars)
 
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max_time_sec
@@ -220,17 +262,27 @@ def solve_month(
                     col.append(s_name)
                     break
         data[str(d + 1)] = col
-    return pd.DataFrame(data)
+    roster_df = pd.DataFrame(data)
+
+    # hours & excess (for output)
+    total_hours = []
+    excess_hours = []
+    for n in range(num_nurses):
+        total_hours.append(int(solver.Value(total_hours_vars[n])))
+        excess_hours.append(int(solver.Value(excess_hours_vars[n])))
+
+    roster_df["total_hours"] = total_hours
+    roster_df["exceed_hours"] = excess_hours
+    return roster_df
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True)
+    parser.add_argument("--config", default="ipd_nurse")
     parser.add_argument(
         "--input_dir",
         default=None,
-        required=True,
-        help="Directory containing nurses.csv, preferences.csv, coverage_blocks.csv",
+        help="Directory with nurses.csv, preferences.csv, coverage_blocks.csv",
     )
     parser.add_argument("--days", type=int, default=31)
     parser.add_argument("--max_time", type=float, default=60.0)
@@ -239,14 +291,86 @@ def main():
     cfg = load_config(args.config)
     input_dir = args.input_dir or os.path.join("mock_data", args.config)
 
+    nurses_path = os.path.join(input_dir, "nurses.csv")
+    nurses_df = pd.read_csv(nurses_path)
+
     roster_df = solve_month(
         cfg,
         input_dir=input_dir,
         month_days=args.days,
         max_time_sec=args.max_time,
     )
+
+    # Merge nurse info
+    merged = roster_df.merge(nurses_df, on="nurse_id")
+
+    # Build display columns
+    threshold = 184
+    name_phone = merged["name"] + "\n" + merged["phone_number"].astype(str)
+    flag_over_240 = (merged["exceed_hours"] > 240).astype(int)
+
+    # Column order
+    day_cols = [str(d) for d in range(1, args.days + 1)]
+    final_cols = [
+        "name_phone",
+        "level",
+        "role",  # position
+        "nurse_id",
+        "threshold_hours",
+        "total_hours",
+        "exceed_hours",
+        "flag_over_240",
+    ] + day_cols
+
+    final_df = pd.DataFrame(
+        {
+            "name_phone": name_phone,
+            "level": merged["level"],
+            "role": merged["skill"],  # or merged["skill"] if you prefer
+            "nurse_id": merged["nurse_id"],
+            "threshold_hours": threshold,
+            "total_hours": merged["total_hours"],
+            "exceed_hours": merged["exceed_hours"],
+            "flag_over_240": flag_over_240,
+        }
+    )
+
+    for d in day_cols:
+        final_df[d] = merged[d]
+
     out_path = os.path.join(input_dir, "roster_output.xlsx")
-    roster_df.to_excel(out_path, index=False)
+    with pd.ExcelWriter(out_path, engine="xlsxwriter") as writer:
+        final_df.to_excel(writer, index=False, sheet_name="Roster")
+
+        # Block headcount sheet
+        block_rows = []
+        for day in range(1, args.days + 1):
+            col = str(day)
+            for block in cfg.TIME_BLOCKS:
+                total = 0
+                rn = 0
+                pn = 0
+                for _, row in merged.iterrows():
+                    shift = row[col]
+                    if block in cfg.SHIFT_BLOCKS.get(shift, []):
+                        total += 1
+                        if row["skill"] == "RN":
+                            rn += 1
+                        elif row["skill"] == "PN":
+                            pn += 1
+                block_rows.append(
+                    {
+                        "day": day,
+                        "block": block,
+                        "total": total,
+                        "RN": rn,
+                        "PN": pn,
+                    }
+                )
+        bc = pd.DataFrame(block_rows)
+        bc["val"] = bc["total"].astype(str) + " (" + bc["RN"].astype(str) + ", " + bc["PN"].astype(str) + ")"
+        bc.set_index(["block", "day"])["val"].unstack().to_excel(writer, sheet_name="BlockCoverage")
+
     print(f"Roster written to {out_path}")
 
 
