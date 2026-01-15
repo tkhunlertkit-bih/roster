@@ -1,4 +1,0 @@
-event_id,event_name,event_date,event_type,affected_wards,staffing_impact,impact_percentage,notes,created_at,updated_at
-EVT001,JCI Accreditation Visit,2025-01-27,INSPECTION,"[""ALL""]",INCREASE,20,Ensure full staffing and senior coverage,2026-01-14 02:44:55.982996,2026-01-14 02:44:55.983296
-EVT002,Thai New Year (Songkran),2025-01-20,HOLIDAY,"[""ALL""]",HIGH_LEAVE_RISK,30,Many staff request leave during this period,2026-01-14 02:44:55.982996,2026-01-14 02:44:55.983296
-EVT003,Annual Training Day,2025-02-09,TRAINING,"[""W001"", ""W002""]",REDUCED_AVAILABILITY,15,ICU and CCU mandatory training,2026-01-14 02:44:55.982996,2026-01-14 02:44:55.983296

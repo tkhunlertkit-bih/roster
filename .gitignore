@@ -1,0 +1,4 @@
+Session.vim
+.conda_config
+mock_data/*
+**/__pycache__/**
