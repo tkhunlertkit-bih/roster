@@ -46,28 +46,73 @@ def add_one_shift_per_day(model, x, num_nurses, days, cfg):
 
 
 def add_block_skill_coverage(model, x, nurses_df, days, coverage_blocks, cfg):
+    """
+    For each day, block and skill:
+      sum over nurses with that skill of shifts covering the block >= required.
+    Also enforces RN share <= 65% of (RN+PN) as a hard constraint per block.
+    """
     S = len(cfg.SHIFT_NAMES)
     nurse_skills = list(nurses_df["skill"])
+    num_nurses = len(nurse_skills)
+
+    # which blocks each shift covers
     shift_blocks = {i: cfg.SHIFT_BLOCKS[cfg.SHIFT_NAMES[i]] for i in range(S)}
 
     for d in range(days):
         day = d + 1
         cov_day = coverage_blocks.get(day, {})
+
         for block in cfg.TIME_BLOCKS:
             cov_block = cov_day.get(block, {})
+
+            # Collect terms for PN and RN in this block
+            pn_terms = []
+            rn_terms = []
+
+            for n, skill_n in enumerate(nurse_skills):
+                for s in range(S):
+                    if block not in shift_blocks[s]:
+                        continue
+                    lit = x[n, d, s]
+                    if skill_n == "PN":
+                        pn_terms.append(lit)
+                    elif skill_n == "RN":
+                        rn_terms.append(lit)
+
+            # Coverage constraints per skill (if required > 0)
             for skill in cfg.SKILLS:
                 required = int(cov_block.get(skill, 0))
                 if required == 0:
                     continue
-                terms = []
-                for n, skill_n in enumerate(nurse_skills):
-                    if skill_n != skill:
-                        continue
-                    for s in range(S):
-                        if block in shift_blocks[s]:
-                            terms.append(x[n, d, s])
-                if terms:
-                    model.Add(sum(terms) >= required)
+                if skill == "PN":
+                    model.Add(sum(pn_terms) >= required)
+                elif skill == "RN":
+                    model.Add(sum(rn_terms) >= required)
+
+            # ---- RN ratio constraint: RN <= 65% of (RN+PN) ----
+            pn_block = model.NewIntVar(0, num_nurses, f"pn_{day}_{block}")
+            rn_block = model.NewIntVar(0, num_nurses, f"rn_{day}_{block}")
+            tot_block = model.NewIntVar(0, num_nurses, f"tot_{day}_{block}")
+
+            if pn_terms:
+                model.Add(pn_block == sum(pn_terms))
+            else:
+                model.Add(pn_block == 0)
+
+            if rn_terms:
+                model.Add(rn_block == sum(rn_terms))
+            else:
+                model.Add(rn_block == 0)
+
+            model.Add(tot_block == pn_block + rn_block)
+
+            has_staff = model.NewBoolVar(f"has_staff_{day}_{block}")
+            model.Add(tot_block > 0).OnlyEnforceIf(has_staff)
+            model.Add(tot_block == 0).OnlyEnforceIf(has_staff.Not())
+
+            # RN share <= 65% when there is at least one RN/PN
+            # 100 * rn <= 65 * (rn + pn)
+            model.Add(100 * rn_block <= 65 * tot_block).OnlyEnforceIf(has_staff)
 
 
 def add_hours_constraints_and_excess(model, x, nurses_df, days, cfg):
@@ -219,6 +264,33 @@ def add_preference_fair_objective(
     model.Minimize(W_HOURS * sum(excess_hours_vars.values()) + W_PREF * sum(penalties) + W_FAIR * sum(deviations))
 
 
+def add_long_off_vacation_rule(model, x, num_nurses, days, cfg):
+    shift_index = {name: i for i, name in enumerate(cfg.SHIFT_NAMES)}
+    off_idx = [shift_index[s] for s in cfg.OFF_SHIFTS]
+    v_idx = shift_index["V"]
+
+    for n in range(num_nurses):
+        # For each possible start of a 4+ off-day run
+        for d in range(days - 3):
+            # indicator: days d..d+3 are all off
+            flags = []
+            for k in range(4):
+                is_off = model.NewBoolVar(f"is_off_{n}_{d+k}")
+                model.Add(sum(x[n, d + k, s] for s in off_idx) == 1).OnlyEnforceIf(is_off)
+                model.Add(sum(x[n, d + k, s] for s in off_idx) != 1).OnlyEnforceIf(is_off.Not())
+                flags.append(is_off)
+
+            four_off = model.NewBoolVar(f"four_off_{n}_{d}")
+            model.Add(sum(flags) == 4).OnlyEnforceIf(four_off)
+            model.Add(sum(flags) != 4).OnlyEnforceIf(four_off.Not())
+
+            # If there is at least a 4-day off run starting here,
+            # then from day d+3 onward, as long as the streak continues,
+            # all those days must be V.
+            # For simplicity: enforce V at day d+3 when four_off is true.
+            model.Add(x[n, d + 3, v_idx] == 1).OnlyEnforceIf(four_off)
+
+
 def solve_month(
     cfg,
     input_dir: str,
@@ -239,6 +311,7 @@ def solve_month(
     model = cp_model.CpModel()
     x = create_variables(model, num_nurses, days, cfg)
     add_one_shift_per_day(model, x, num_nurses, days, cfg)
+    add_long_off_vacation_rule(model, x, num_nurses, days, cfg)
     add_block_skill_coverage(model, x, nurses_df, days, coverage_blocks, cfg)
     total_hours_vars, excess_hours_vars = add_hours_constraints_and_excess(model, x, nurses_df, days, cfg)
     add_leave_constraints(model, x, nurses_df, prefs_df, days, cfg)
@@ -251,6 +324,7 @@ def solve_month(
     status = solver.Solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        print(status)
         raise RuntimeError("No feasible solution found")
 
     data: Dict[str, List[str]] = {"nurse_id": list(nurses_df["nurse_id"])}
@@ -311,16 +385,6 @@ def main():
 
     # Column order
     day_cols = [str(d) for d in range(1, args.days + 1)]
-    final_cols = [
-        "name_phone",
-        "level",
-        "role",  # position
-        "nurse_id",
-        "threshold_hours",
-        "total_hours",
-        "exceed_hours",
-        "flag_over_240",
-    ] + day_cols
 
     final_df = pd.DataFrame(
         {

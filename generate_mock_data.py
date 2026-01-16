@@ -26,7 +26,7 @@ def generate_mock_nurses(config, out_dir: str, num_nurses=16, seed=0):
         nurse_id = f"N{i+1:02d}"
         level = random.randint(1, 4)
         role = "RN_IPD"
-        skill = random.choice(config.SKILLS)
+        skill = random.choices(config.SKILLS, weights=config.SKILL_PROPORTION, k=1)[0]
         phone = f"08{i:08d}"  # dummy phone number
         nurses.append(
             {
@@ -65,16 +65,16 @@ def generate_mock_preferences(
         col = []
         for _ in nurse_ids:
             r = random.random()
-            if r < 0.03:
-                col.append("V")
-            elif r < 0.04:
+            if r < 0.01:
                 col.append("BD")
-            elif r < 0.08:
+            elif r < 0.03:
                 col.append("PUB")
-            elif r < 0.28:
-                col.append("X")
-            else:
+            elif r < 0.13:
+                col.append("X")  # use to be "V" but nurses would only submit X, excesses would be V.
+            elif r < 0.20:
                 col.append(random.choice(working_shifts))
+            else:  # no preferences.
+                col.append("")
         data[str(d)] = col
 
     pd.DataFrame(data).to_csv(path, index=False)

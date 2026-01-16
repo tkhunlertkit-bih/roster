@@ -47,6 +47,7 @@ SHIFT_BLOCKS = {s.name: list(s.blocks) for s in SHIFT_DEFS}
 
 # basic: RN vs PN (can extend to WS, etc.)
 SKILLS = ["RN", "PN"]
+SKILL_PROPORTION = [60, 40]
 
 # The nurse CSV should have a 'skill' column with one of SKILLS.
 
