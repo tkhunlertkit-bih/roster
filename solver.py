@@ -1,12 +1,15 @@
 # solver.py
-
 import argparse
 import importlib
+import math
 import os
 from typing import Any, Dict, List
 
 import pandas as pd
 from ortools.sat.python import cp_model
+
+from swap_utils import improve_by_day_swaps, improve_by_month_swaps
+from validate_roster import validate_roster
 
 ModelT = Any
 
@@ -230,29 +233,13 @@ def add_days_off_rules(model, x, num_nurses, days, cfg):
             model.Add(off_next == 1).OnlyEnforceIf(all_work)
 
 
-def add_preference_fair_objective(
-    model,
-    x,
-    nurses_df,
-    prefs_df,
-    days,
-    cfg,
-    excess_hours_vars,
-    total_hours_all,
-    beds_sum,
-    fte_uos_threshold,
-):
-    """
-    Objective:
-      1) Minimize sum of excess hours (primary).
-      2) Minimize preference penalties and their unfairness (secondary).
-    """
+def build_preference_terms(model, x, nurses_df, prefs_df, days, cfg):
     shift_index = {name: i for i, name in enumerate(cfg.SHIFT_NAMES)}
     N = len(nurses_df)
 
     penalties = []
     dayoff_penalties = []
-    long_shift_terms = []
+    long_penalty_terms = []
     long_pref_matches = []
     requesters = []
 
@@ -260,6 +247,7 @@ def add_preference_fair_objective(
         terms = []
         dayoff_terms = []
         has_pref = False
+
         for d in range(days):
             pref = prefs_df.loc[n, str(d + 1)]
             if pd.isna(pref) or pref == "":
@@ -269,18 +257,15 @@ def add_preference_fair_objective(
             if pref == "R":
                 pref = "X"
 
-            # requested day off
             if pref == "X":
-                # any non-off assignment is a strong violation
+                # requested day off
                 is_off = model.NewBoolVar(f"is_off_{n}_{d}")
-                # off if assigned in any OFF_SHIFTS
                 off_lits = [x[n, d, shift_index[s]] for s in cfg.OFF_SHIFTS if s in shift_index]
                 if off_lits:
                     model.Add(sum(off_lits) == 1).OnlyEnforceIf(is_off)
                     model.Add(sum(off_lits) != 1).OnlyEnforceIf(is_off.Not())
                 else:
                     model.Add(is_off == 0)
-
                 dayoff_violation = model.NewBoolVar(f"dayoff_violation_{n}_{d}")
                 model.Add(is_off == 0).OnlyEnforceIf(dayoff_violation)
                 model.Add(is_off == 1).OnlyEnforceIf(dayoff_violation.Not())
@@ -294,40 +279,29 @@ def add_preference_fair_objective(
                     model.Add(x[n, d, s_pref] == 1).OnlyEnforceIf(mismatch.Not())
                     terms.append(mismatch)
 
-                    # reward matches (so that pref shifts win over generic penalties)
                     match = model.NewBoolVar(f"match_{n}_{d}")
                     model.Add(x[n, d, s_pref] == 1).OnlyEnforceIf(match)
                     model.Add(x[n, d, s_pref] == 0).OnlyEnforceIf(match.Not())
-                    # store as negative penalty later by substracting from objective via a weight
-                    long_shift_terms.append((match, pref))
-
-                    # If preferred shift is a LONG shift, track a matched variables
                     if pref in cfg.LONG_SHIFTS:
-                        match_long = model.NewBoolVar(f"match_long_{n}_{d}")
-                        model.Add(x[n, d, s_pref] == 1).OnlyEnforceIf(match_long)
-                        model.Add(x[n, d, s_pref] == 0).OnlyEnforceIf(match_long.Not())
-                        long_pref_matches.append(match_long)
+                        long_pref_matches.append(match)
 
-        # aggregate
         total_penalty = model.NewIntVar(0, days * 2, f"penalty_{n}")
         model.Add(total_penalty == sum(terms)) if terms else model.Add(total_penalty == 0)
         penalties.append(total_penalty)
-
-        if has_pref:
-            requesters.append(n)
 
         dayoff_penalty = model.NewIntVar(0, days, f"dayoff_penalty_{n}")
         model.Add(dayoff_penalty == sum(dayoff_terms)) if dayoff_terms else model.Add(dayoff_penalty == 0)
         dayoff_penalties.append(dayoff_penalty)
 
-    long_penalty_terms = []
+        if has_pref:
+            requesters.append(n)
+
+    # long_shift generic penalty (optional; you set W_LONG=0 so this is unused)
+    shift_index = {name: i for i, name in enumerate(cfg.SHIFT_NAMES)}
     for n in range(N):
         for d in range(days):
             is_long = model.NewBoolVar(f"is_long_{n}_{d}")
-            long_lits = []
-            for s_name in cfg.LONG_SHIFTS:
-                if s_name in shift_index:
-                    long_lits.append(x[n, d, shift_index[s_name]])
+            long_lits = [x[n, d, shift_index[s_name]] for s_name in cfg.LONG_SHIFTS if s_name in shift_index]
             if long_lits:
                 long_sum = model.NewIntVar(0, len(long_lits), f"long_sum_{n}_{d}")
                 model.Add(long_sum == sum(long_lits))
@@ -335,9 +309,18 @@ def add_preference_fair_objective(
                 model.Add(long_sum == 0).OnlyEnforceIf(is_long.Not())
                 long_penalty_terms.append(is_long)
 
-    avg_penalty = model.NewIntVar(0, days * 2, "avg_penalty")
-    model.Add(avg_penalty * N == sum(penalties))
+    return penalties, dayoff_penalties, long_penalty_terms, long_pref_matches, requesters
 
+
+def add_preference_fair_objective(
+    model, x, nurses_df, prefs_df, days, cfg, excess_hours_vars, total_hours_all, beds_sum, fte_uos_threshold
+):
+    penalties, dayoff_penalties, long_penalty_terms, long_pref_matches, requesters = build_preference_terms(
+        model, x, nurses_df, prefs_df, days, cfg
+    )
+
+    # fairness over combined denies (if you still want it; W_FAIR can be 0)
+    N = len(nurses_df)
     denies = []
     for n in range(N):
         combined = model.NewIntVar(0, days * 2, f"combined_deny_{n}")
@@ -359,14 +342,12 @@ def add_preference_fair_objective(
     else:
         deviations = []
 
-    # FTE/UOS soft penalty_
-    # target_max_hours = fte
+    # FTE/UOS soft penalty (unchanged)
     target_max_hours = int(fte_uos_threshold * beds_sum * 8)
     over_fte = model.NewIntVar(0, 2 * target_max_hours, "over_fte")
     model.Add(over_fte >= total_hours_all - target_max_hours)
     model.Add(over_fte >= 0)
 
-    # Weights: hours more important than preferences
     W_HOURS = cfg.EXCEEDING_HOURS_WEIGHT
     W_DAYOFF = cfg.DENIED_DAYS_OFF_WEIGHT
     W_PREF = cfg.PREFERENCE_WEIGHT
@@ -378,12 +359,15 @@ def add_preference_fair_objective(
     model.Minimize(
         W_HOURS * sum(excess_hours_vars.values())
         + W_DAYOFF * sum(dayoff_penalties)
-        + W_PREF * sum(penalties)  # penalize mismatches
-        + W_FAIR * sum(deviations)  # fairness of prefs
-        + W_LONG * sum(long_penalty_terms)  # generic long-shift penalty
-        - W_LONG_PREF * sum(long_pref_matches)  # reward long shift that matches preferences
+        + W_PREF * sum(penalties)
+        + W_FAIR * sum(deviations)
+        + W_LONG * sum(long_penalty_terms)
+        - W_LONG_PREF * sum(long_pref_matches)
         + W_FTE * over_fte
     )
+
+    # return for lexicographic use
+    return penalties, dayoff_penalties
 
 
 def add_long_off_vacation_rule(model, x, num_nurses, days, cfg):
@@ -484,7 +468,128 @@ def compute_request_stats(roster_df, prefs_df, days):
     return pd.DataFrame(req_stats), pd.DataFrame(denied_rows)
 
 
-def solve_month(
+def solve_stage1_min_x(cfg, input_dir, month_days, pub_days_per_nurse, max_time_sec):
+    nurses_path = os.path.join(input_dir, "nurses.csv")
+    prefs_path = os.path.join(input_dir, "preferences.csv")
+    beds_path = os.path.join(input_dir, "beds_per_day.csv")
+
+    nurses_df = pd.read_csv(nurses_path)
+    prefs_df = pd.read_csv(prefs_path)
+    beds_df = pd.read_csv(beds_path)
+
+    num_nurses = len(nurses_df)
+    days = month_days
+
+    model: ModelT = cp_model.CpModel()
+    x = create_variables(model, num_nurses, days, cfg)
+
+    add_one_shift_per_day(model, x, num_nurses, days, cfg)
+    add_daily_min_staff(model, x, num_nurses, days, cfg)
+    add_shift_skill_mix(model, x, nurses_df, days, cfg)
+    add_staff_to_patient_ratios_by_block(model, x, nurses_df, days, cfg, beds_df)
+    total_hours_vars, excess_hours_vars = add_hours_constraints_and_excess(model, x, nurses_df, days, cfg)
+    add_leave_constraints(model, x, nurses_df, prefs_df, days, cfg, pub_days_per_nurse)
+    add_forbidden_transitions(model, x, num_nurses, days, cfg)
+    add_days_off_rules(model, x, num_nurses, days, cfg)
+
+    # Build preference terms but define our own objective
+    _, dayoff_penalties, _, _, _ = build_preference_terms(model, x, nurses_df, prefs_df, days, cfg)
+
+    # Stage 1 objective: primarily minimize X-denials, also keep excess hours small
+    W_HOURS = cfg.EXCEEDING_HOURS_WEIGHT
+    W_DAYOFF = cfg.DENIED_DAYS_OFF_WEIGHT
+
+    model.Minimize(W_DAYOFF * sum(dayoff_penalties) + W_HOURS * sum(excess_hours_vars.values()))
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = max_time_sec
+
+    status = solver.Solve(model)
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        raise RuntimeError("No feasible solution in stage 1")
+
+    min_x_denials = int(sum(solver.Value(v) for v in dayoff_penalties))
+    # extract roster
+    data = {"nurse_id": list(nurses_df["nurse_id"])}
+    for d in range(days):
+        col = []
+        for n in range(num_nurses):
+            for s_idx, s_name in enumerate(cfg.SHIFT_NAMES):
+                if solver.BooleanValue(x[n, d, s_idx]):
+                    col.append(s_name)
+                    break
+        data[str(d + 1)] = col
+    roster_df = pd.DataFrame(data)
+    roster_df["total_hours"] = [int(solver.Value(total_hours_vars[n])) for n in range(num_nurses)]
+    roster_df["exceed_hours"] = [int(solver.Value(excess_hours_vars[n])) for n in range(num_nurses)]
+
+    return model, x, solver, nurses_df, prefs_df, beds_df, total_hours_vars, excess_hours_vars, min_x_denials, roster_df
+
+
+def solve_stage2_with_x_bound(
+    cfg, input_dir, month_days, pub_days_per_nurse, fte_uos_threshold, max_time_sec, min_x_denials
+):
+    nurses_path = os.path.join(input_dir, "nurses.csv")
+    prefs_path = os.path.join(input_dir, "preferences.csv")
+    beds_path = os.path.join(input_dir, "beds_per_day.csv")
+
+    nurses_df = pd.read_csv(nurses_path)
+    prefs_df = pd.read_csv(prefs_path)
+    beds_df = pd.read_csv(beds_path)
+
+    num_nurses = len(nurses_df)
+    days = month_days
+
+    model: ModelT = cp_model.CpModel()
+    x = create_variables(model, num_nurses, days, cfg)
+
+    add_one_shift_per_day(model, x, num_nurses, days, cfg)
+    add_daily_min_staff(model, x, num_nurses, days, cfg)
+    add_shift_skill_mix(model, x, nurses_df, days, cfg)
+    add_staff_to_patient_ratios_by_block(model, x, nurses_df, days, cfg, beds_df)
+    total_hours_vars, excess_hours_vars = add_hours_constraints_and_excess(model, x, nurses_df, days, cfg)
+    add_leave_constraints(model, x, nurses_df, prefs_df, days, cfg, pub_days_per_nurse)
+    add_forbidden_transitions(model, x, num_nurses, days, cfg)
+    add_days_off_rules(model, x, num_nurses, days, cfg)
+
+    total_hours_all = sum(total_hours_vars.values())
+    beds_sum = int(beds_df["beds"].sum())
+
+    _, dayoff_penalties, _, _, _ = build_preference_terms(model, x, nurses_df, prefs_df, days, cfg)
+
+    # Hard bound: do not allow more X denials than min_x_denials
+    model.Add(sum(dayoff_penalties) <= min_x_denials)
+
+    # Full objective as before (or with W_FTE=1, W_LONG=0 etc.)
+    add_preference_fair_objective(
+        model, x, nurses_df, prefs_df, days, cfg, excess_hours_vars, total_hours_all, beds_sum, fte_uos_threshold
+    )
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = max_time_sec
+
+    status = solver.Solve(model)
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        raise RuntimeError("No feasible solution in stage 2")
+
+    # extract roster
+    data = {"nurse_id": list(nurses_df["nurse_id"])}
+    for d in range(days):
+        col = []
+        for n in range(num_nurses):
+            for s_idx, s_name in enumerate(cfg.SHIFT_NAMES):
+                if solver.BooleanValue(x[n, d, s_idx]):
+                    col.append(s_name)
+                    break
+        data[str(d + 1)] = col
+    roster_df = pd.DataFrame(data)
+    roster_df["total_hours"] = [int(solver.Value(total_hours_vars[n])) for n in range(num_nurses)]
+    roster_df["exceed_hours"] = [int(solver.Value(excess_hours_vars[n])) for n in range(num_nurses)]
+
+    return roster_df
+
+
+def solve_month_with_solution(
     cfg,
     input_dir: str,
     month_days: int,
@@ -552,7 +657,228 @@ def solve_month(
 
     roster_df["total_hours"] = total_hours
     roster_df["exceed_hours"] = excess_hours
+    return roster_df, (model, x, solver, nurses_df, prefs_df, beds_df, total_hours_vars)
+
+
+def improve_with_second_pass(
+    cfg,
+    input_dir,
+    month_days,
+    pub_days_per_nurse,
+    fte_uos_threshold,
+    max_time_sec=60.0,
+) -> pd.DataFrame:
+    # --- first pass: current behaviour ---
+    try:
+        roster_df, first_solution = solve_month_with_solution(
+            cfg, input_dir, month_days, pub_days_per_nurse, fte_uos_threshold, max_time_sec
+        )
+    except RuntimeError:
+        # if the solution is infeasible, just return empty roster.
+        return pd.DataFrame()
+
+    # first_solution should include: x, model, total_hours_vars, etc.
+    _, x1, solver_f, nurses_df, prefs_df, beds_df, total_hours_vars1 = first_solution
+
+    # store first-pass work/off pattern and total_hours as constants
+    num_nurses = len(nurses_df)
+    days = month_days
+    S = len(cfg.SHIFT_NAMES)
+    work_shifts = [s for s, name in enumerate(cfg.SHIFT_NAMES) if name not in cfg.OFF_SHIFTS]
+
+    work_off = {}
+    hours_target = {}
+    for n in range(num_nurses):
+        hours_target[n] = int(solver_f.Value(total_hours_vars1[n]))
+        for d in range(days):
+            worked = any(solver_f.Value(x1[n, d, s]) for s in work_shifts)
+            work_off[n, d] = int(worked)
+
+    # --- second pass: rebuild model with locks ---
+    model2: ModelT = cp_model.CpModel()
+    x2 = create_variables(model2, num_nurses, days, cfg)
+
+    add_one_shift_per_day(model2, x2, num_nurses, days, cfg)
+    add_daily_min_staff(model2, x2, num_nurses, days, cfg)
+    add_shift_skill_mix(model2, x2, nurses_df, days, cfg)
+    add_staff_to_patient_ratios_by_block(model2, x2, nurses_df, days, cfg, beds_df)
+
+    # hours constraints with fixed total hours
+    total_hours_vars2, excess_hours_vars2 = add_hours_constraints_and_excess(model2, x2, nurses_df, days, cfg)
+    for n in range(num_nurses):
+        model2.Add(total_hours_vars2[n] == hours_target[n])
+
+    add_leave_constraints(model2, x2, nurses_df, prefs_df, days, cfg, pub_days_per_nurse)
+    add_forbidden_transitions(model2, x2, num_nurses, days, cfg)
+    add_days_off_rules(model2, x2, num_nurses, days, cfg)
+
+    # lock work/off pattern from first pass
+    work_idx = [i for i in range(S) if cfg.SHIFT_NAMES[i] not in cfg.OFF_SHIFTS]
+
+    for n in range(num_nurses):
+        for d in range(days):
+            if work_off[n, d] == 0:
+                model2.Add(sum(x2[n, d, s] for s in work_idx) == 0)
+            else:
+                model2.Add(sum(x2[n, d, s] for s in work_idx) == 1)
+
+    # objective now: mostly preferences
+    total_hours_all2 = sum(total_hours_vars2.values())
+    beds_sum = int(beds_df["beds"].sum())
+    add_preference_fair_objective(
+        model2, x2, nurses_df, prefs_df, days, cfg, excess_hours_vars2, total_hours_all2, beds_sum, fte_uos_threshold
+    )
+
+    solver2 = cp_model.CpSolver()
+    solver2.parameters.max_time_in_seconds = max_time_sec
+    status2 = solver2.Solve(model2)
+    if status2 not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        # fallback to roster_df from first pass
+        return roster_df
+
+    # extract improved roster
+    data = {"nurse_id": list(nurses_df["nurse_id"])}
+    for d in range(days):
+        col = []
+        for n in range(num_nurses):
+            for s_idx, s_name in enumerate(cfg.SHIFT_NAMES):
+                if solver2.BooleanValue(x2[n, d, s_idx]):
+                    col.append(s_name)
+                    break
+        data[str(d + 1)] = col
+    improved_roster_df = pd.DataFrame(data)
+    improved_roster_df["total_hours"] = [int(solver2.Value(total_hours_vars2[n])) for n in range(num_nurses)]
+    improved_roster_df["exceed_hours"] = [int(solver2.Value(excess_hours_vars2[n])) for n in range(num_nurses)]
+
+    return improved_roster_df
+
+
+def lexicographic_solve(cfg, input_dir, month_days, pub_days_per_nurse, fte_uos_threshold, max_time_sec):
+    _, _, _, _, _, _, _, _, min_x_denial, roster_df = solve_stage1_min_x(
+        cfg, input_dir, month_days, pub_days_per_nurse, max_time_sec
+    )
+    print(f"min_x_denials: {min_x_denial}")
+    try:
+        roster_df = solve_stage2_with_x_bound(
+            cfg, input_dir, month_days, pub_days_per_nurse, fte_uos_threshold, max_time_sec, min_x_denial + 5
+        )
+    except RuntimeError:
+        print("unable to solve 2, reverting back to solve 1 solution")
     return roster_df
+
+
+def score_roster(roster_df, prefs_df, days, cfg):
+    if roster_df.empty:
+        return math.inf
+
+    _, denied_rows = compute_request_stats(roster_df, prefs_df, days)
+
+    # categories:
+    #  - X -> work (very bad)
+    #  - work -> X (bad)
+    #  - shift -> other shift (base bad)
+    #  - M <-> M4/ME, N <-> N4 (0.5)
+    VERY_BAD = 3.0
+    BAD = 2.0
+    BASE = 1.0
+    HALF = 0.5
+
+    score = 0.0
+
+    for _, row in denied_rows.iterrows():
+        req = row["requested"]
+        assg = row["assigned"]
+
+        is_off_req = req == "X"
+        is_off_assg = assg in cfg.OFF_SHIFTS
+
+        # X -> work
+        if is_off_req and not is_off_assg:
+            score += VERY_BAD
+            continue
+
+        # work -> X
+        if not is_off_req and is_off_assg:
+            score += BAD
+            continue
+
+        # shift -> other shift
+        # group mornings and nights for 0.5 weight
+        morning_group = {"M", "M4", "ME"}
+        night_group = {"N", "N4"}
+
+        if req in morning_group and assg in morning_group:
+            score += HALF
+        elif req in night_group and assg in night_group:
+            score += HALF
+        else:
+            score += BASE
+
+    return score
+
+
+def multi_seed_best_roster(
+    cfg,
+    nurses_df,
+    beds_df,
+    input_dir,
+    month_days,
+    pub_days_per_nurse,
+    fte_uos_threshold,
+    days,
+    num_seeds=5,
+    max_time_sec=60,
+):
+    prefs_path = os.path.join(input_dir, "preferences.csv")
+    prefs_df = pd.read_csv(prefs_path)
+
+    best_score = None
+    best_roster = pd.DataFrame()
+
+    for seed in range(num_seeds):
+        print(f"iteration: {seed}")
+        # set seed before each solve
+        # cp_solver = cp_model.CpSolver()
+        # cp_solver.random_seed = seed  # you can instead set via global param if you refactor
+
+        # For simplicity, set seed inside each stage function
+        roster_df = lexicographic_solve(cfg, input_dir, month_days, pub_days_per_nurse, fte_uos_threshold, max_time_sec)
+        ok1 = validate_roster(roster_df, nurses_df, beds_df, cfg, days)
+        if not ok1:
+            print("shit, failed lexicographic before swap attempts")
+            exit()
+        roster_df = improve_by_month_swaps(roster_df, nurses_df, prefs_df, cfg, days)
+        roster_df = improve_by_day_swaps(roster_df, nurses_df, prefs_df, cfg, days)
+        ok = validate_roster(roster_df, nurses_df, beds_df, cfg, days)
+
+        s = score_roster(roster_df, prefs_df, days, cfg)
+        print(f"score lexico: {s}")
+        if (best_score is None or s < best_score) and ok:
+            print("better model saved")
+            best_score = s
+            best_roster = roster_df
+
+        roster2_df = improve_with_second_pass(
+            cfg, input_dir, month_days, pub_days_per_nurse, fte_uos_threshold, max_time_sec
+        )
+        if not roster2_df.empty:
+            ok2 = validate_roster(roster2_df, nurses_df, beds_df, cfg, days)
+            if not ok2:
+                print("shit, failed improve_with_second_pass before swap attempts")
+                exit()
+            roster2_df = improve_by_month_swaps(roster2_df, nurses_df, prefs_df, cfg, days)
+            roster2_df = improve_by_day_swaps(roster2_df, nurses_df, prefs_df, cfg, days)
+            ok = validate_roster(roster2_df, nurses_df, beds_df, cfg, days)
+
+            s2 = score_roster(roster2_df, prefs_df, days, cfg)
+            print(f"score 2-pass: {s2}")
+            if (best_score is None or s2 < best_score) and ok:
+                print("better model saved")
+                best_score = s2
+                best_roster = roster2_df
+        print()
+
+    return best_roster, best_score
 
 
 def main():
@@ -584,15 +910,25 @@ def main():
 
     nurses_path = os.path.join(input_dir, "nurses.csv")
     nurses_df = pd.read_csv(nurses_path)
+    beds_path = os.path.join(input_dir, "beds_per_day.csv")
+    beds_df = pd.read_csv(beds_path)
 
-    roster_df = solve_month(
+    roster_df, score = multi_seed_best_roster(
         cfg,
+        nurses_df,
+        beds_df,
         input_dir=input_dir,
         month_days=args.days,
         pub_days_per_nurse=args.pub_days_per_nurse,
         fte_uos_threshold=args.fte_uos_threshold,
+        days=args.days,
         max_time_sec=args.max_time,
+        num_seeds=10,
     )
+
+    ok = validate_roster(roster_df, nurses_df, beds_df, cfg, args.days)
+    if not ok:
+        exit()
 
     # Merge nurse info
     merged = roster_df.merge(nurses_df, on="nurse_id")
@@ -668,6 +1004,7 @@ def main():
         print(shift_stats)
         print(request_stats)
         print(denied_rows)
+        print(score)
 
     print(f"Roster written to {out_path}")
 

@@ -80,7 +80,7 @@ MAX_BD_PER_MONTH = 0
 # ---- objective weighting ----------------------------------------------------
 
 EXCEEDING_HOURS_WEIGHT = 10_000
-DENIED_DAYS_OFF_WEIGHT = 40_000
+DENIED_DAYS_OFF_WEIGHT = 100_000
 PREFERENCE_WEIGHT = 8_000
 FAIRNESS_WEIGHT = 5_000
 OVER_FTE_WEIGHT = 1
