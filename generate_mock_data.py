@@ -81,23 +81,18 @@ def generate_mock_preferences(
     print(f"Wrote {path}")
 
 
-def build_coverage_from_beds_rn_pn(
-    config,
+def build_beds_per_day(
     out_dir: str,
     beds_days: int,
 ):
     """
     Creates mock:
       beds_per_day.csv
-      beds_lookup_blocks.csv
-      coverage_blocks.csv
     inside out_dir.
     """
     ensure_dir(out_dir)
 
     beds_path = os.path.join(out_dir, "beds_per_day.csv")
-    lookup_path = os.path.join(out_dir, "beds_lookup_blocks.csv")
-    coverage_path = os.path.join(out_dir, "coverage_blocks.csv")
 
     beds_per_day = pd.DataFrame(
         {
@@ -106,50 +101,7 @@ def build_coverage_from_beds_rn_pn(
         }
     )
     beds_per_day.to_csv(beds_path, index=False)
-
-    lookup = pd.DataFrame(
-        {
-            "beds": [10],
-            "B1_RN": [2],
-            "B1_PN": [2],
-            "B2_RN": [2],
-            "B2_PN": [2],
-            "B3_RN": [2],
-            "B3_PN": [2],
-            "B4_RN": [2],
-            "B4_PN": [1],
-        }
-    )
-    lookup.to_csv(lookup_path, index=False)
-
-    # build coverage_blocks.csv
-    beds_df = pd.read_csv(beds_path)
-    lookup_df = pd.read_csv(lookup_path)
-
-    rows = []
-    for _, row in beds_df.iterrows():
-        day = int(row["day"])
-        beds = int(row["beds"])
-        match = lookup_df.loc[lookup_df["beds"] == beds]
-        if match.empty:
-            raise ValueError(f"No lookup entry for beds={beds}")
-        m = match.iloc[0]
-
-        for b in config.TIME_BLOCKS:
-            for skill in config.SKILLS:
-                col = f"{b}_{skill}"
-                required = int(m[col])
-                rows.append(
-                    {
-                        "day": day,
-                        "block": b,
-                        "skill": skill,
-                        "required": required,
-                    }
-                )
-
-    pd.DataFrame(rows).to_csv(coverage_path, index=False)
-    print(f"Wrote {coverage_path}")
+    print(f"Wrote {beds_path}")
 
 
 def main():
@@ -164,7 +116,7 @@ def main():
 
     generate_mock_nurses(cfg, out_dir=out_dir, num_nurses=args.nurses)
     generate_mock_preferences(cfg, out_dir=out_dir, month_days=args.days)
-    build_coverage_from_beds_rn_pn(cfg, out_dir=out_dir, beds_days=args.days)
+    build_beds_per_day(out_dir=out_dir, beds_days=args.days)
 
 
 if __name__ == "__main__":

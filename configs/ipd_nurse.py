@@ -43,6 +43,11 @@ SHIFT_NAMES = [s.name for s in SHIFT_DEFS]
 SHIFT_HOURS = {s.name: s.hours for s in SHIFT_DEFS}
 SHIFT_BLOCKS = {s.name: list(s.blocks) for s in SHIFT_DEFS}
 
+
+# ---- Shift types and weights -----------------------------------------------
+LONG_SHIFTS = ["M4", "N4", "ME"]
+NORMAL_SHIFTS = ["M", "N", "E"]
+
 # ---- skills / nurse types --------------------------------------------------
 
 # basic: RN vs PN (can extend to WS, etc.)
@@ -66,15 +71,19 @@ FORBIDDEN_NEXT: Dict[str, Set[str]] = {
 
 OFF_SHIFTS = {"X", "V", "BD", "PUB"}
 
-MAX_OFF_IN_4_DAYS = 3  # max 3 days off in any 4-day window
 MAX_CONSEC_WORK_DAYS = 4  # after 4 workdays, next day must be off
 
 # ---- leave limits ----------------------------------------------------------
 
-MAX_BD_PER_MONTH = 1
-EQUALIZE_PUB_COUNTS = True
+MAX_BD_PER_MONTH = 0
 
 # ---- objective weighting ----------------------------------------------------
 
-PREFERENCE_WEIGHT = 1
-FAIRNESS_WEIGHT = 1
+EXCEEDING_HOURS_WEIGHT = 10_000
+DENIED_DAYS_OFF_WEIGHT = 40_000
+PREFERENCE_WEIGHT = 8_000
+FAIRNESS_WEIGHT = 5_000
+OVER_FTE_WEIGHT = 1
+
+LONG_SHIFT_PENALTY = 0
+PREF_REWARD = 1_000

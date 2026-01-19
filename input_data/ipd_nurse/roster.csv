@@ -1,0 +1,37 @@
+﻿name_phone,level,role,nurse_id,threshold_hours,total_hours,exceed_hours,flag_over_240,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28
+"Ubonrat U.
+nan",5,SUP,124792,184,180,0,0,M,E,N,N,X,ME,E,N,N,PUB,M,M,M4,N,X,X,X,X,X,N,N,N,N,X,M,M,M,E
+"Supanan S.
+nan",5,SUP,76117,184,176,0,0,PUB,E,X,M,ME,N,N,X,M,ME,N,X,M4,M,X,ME,N4,X,X,X,N,X,X,M,E,E,E,X
+"Usana P.
+nan",4,PN,118729,184,176,0,0,N,N,X,X,PUB,M,N4,N,N,X,X,N,N4,X,ME,N,X,X,X,X,ME,E,E,N,X,M,ME,E
+"Sudarat W.
+nan",4,PN,148262,184,184,0,0,M,M,M,E,X,E,E,E,E,PUB,M,M,M,ME,X,X,X,X,X,ME,E,N,N,X,N,N,N,N
+"Tassanee P.
+nan",4,PN,166918,184,176,0,0,E,X,M,M,N,X,X,X,X,X,E,X,N,N,N,X,M4,M4,ME,PUB,M,ME,E,E,X,E,N,N
+"Supattra S.
+nan",4,PN,196378,184,176,0,0,N4,X,E,N,N,N,X,X,M,ME,E,E,X,X,X,ME,N4,N4,N4,PUB,X,X,M,M,M,N,X,X
+"Conticha T.
+nan",3,PN,253773,184,184,0,0,X,M,E,E,E,X,M,ME,X,N,N,N,X,X,ME,N,X,M4,M4,ME,PUB,X,X,N,N,X,M,M
+"Bussaba S.
+nan",3,PN,257116,184,184,0,0,E,N,N,X,M,PUB,M,M,E,N,X,E,E,E,N,X,M4,N4,N,N,X,M,M,E,E,X,X,M
+"Juthamas C.
+nan",2,RN,267147,184,176,0,0,E,N,X,E,X,N,N,N,N,PUB,M,N,X,N,X,ME,X,X,ME,N,N,N,X,E,N,N,N,X
+"Ausanee
+nan",2,RN,271977,184,176,0,0,N,X,M,M,N,N,X,M,M,ME,N,X,E,X,ME,N,N4,N4,X,PUB,X,X,X,M,M,N,N,X
+"Numluethai
+nan",1,RN,276472,184,176,0,0,M,E,N,N,X,X,M,N,N,PUB,E,E,N,N,X,ME,X,X,N,N,X,N,N,X,M,M,M,E
+"Nantiya
+nan",1,RN,284173,184,176,0,0,M,X,E,E,E,X,X,X,X,X,X,E,X,ME,N,X,M4,M4,X,ME,PUB,ME,E,N,N,X,ME,N
+"Nijchanut
+nan",1,RN,283371,184,176,0,0,PUB,M,E,N,N,X,E,X,M,N,N,N,X,E,N,X,M4,X,M4,N,N,X,M,E,E,E,X,N
+"Jantima
+nan",1,RN,285404,184,176,0,0,N4,N,X,M,N,N,N4,X,E,PUB,M,M,M4,X,X,X,X,X,N4,X,ME,E,N,X,M,E,E,E
+"Natnapha
+nan",1,RN,287407,184,176,0,0,E,E,E,X,M,M,X,E,E,N,N,X,M4,N,N,N,X,M4,X,PUB,N,X,E,E,E,X,M,M
+"Benjaporn
+nan",1,RN,287971,184,176,0,0,M,M,M,X,PUB,ME,E,X,M,N,X,M,M,M,ME,X,X,X,X,ME,E,N,N,X,X,M,M,M
+"Paksiree
+nan",1,RN,293806,184,176,0,0,X,M,M,M,ME,PUB,M,ME,X,ME,E,E,N4,X,ME,N,N4,X,X,X,X,X,M,M,N,X,X,X
+"Alhamin
+nan",1,RN,293873,184,180,0,0,E,N,N,N,X,E,E,N,N,X,M,M,M4,X,X,X,N4,N4,X,PUB,M,M,M,N,X,M,N,N
