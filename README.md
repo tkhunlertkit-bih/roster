@@ -116,7 +116,7 @@ where:
 - $\text{deniedX}_n$: count of denied day-off requests (R or X preferences)
 - $\text{penalty}_n$: count of other unmatched shift preferences
 - $\bar{P}$: average penalty across nurses with preferences
-- Target FTE-UOS hours: $\text{numberOfBeds} \times \text{FTE threshold} \times 8$
+- Target FTE-UOS hours: $\text{number of beds} \times \text{FTE threshold} \times 8$
 
 **Default weights** (configurable in `configs/ipd_nurse.py`):
 
