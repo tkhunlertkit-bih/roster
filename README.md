@@ -15,7 +15,7 @@ ratios using Google OR-Tools CP-SAT.
 
 The solver enforces the following hard constraints using constraint programming:
 
-1. One Shift Per Nurse Per Day
+**1. One Shift Per Nurse Per Day**
 
 Each nurse is assigned exactly one shift (including off-days) per day.
 
@@ -23,7 +23,7 @@ Each nurse is assigned exactly one shift (including off-days) per day.
 \sum_{s \in S} x_{n,d,s} = 1 \quad \forall n \in N, d \in D
 ```
 
-1. Minimum Daily Staffing
+**2. Minimum Daily Staffing**
 
 At least one working nurse (non-off shift) must be scheduled each day.
 
