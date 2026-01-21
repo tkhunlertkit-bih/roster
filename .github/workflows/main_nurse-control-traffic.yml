@@ -60,13 +60,6 @@ jobs:
           unzip release.zip
           rm release.zip
         
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_ED0133D2D9B842DABA211C13D8A9C8CD }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_E01543D2B887442DB19C33538ABA7627 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_501EE1F77D754FF5BE2138EC8E33FD7E }}
-
       - name: 'Deploy to Azure Functions'
         uses: Azure/functions-action@v1
         id: deploy-to-function
@@ -74,7 +67,6 @@ jobs:
           app-name: 'nurse-control-traffic'
           slot-name: 'Production'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
           scm-do-build-during-deployment: true
           enable-oryx-build: true
-
-          
