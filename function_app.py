@@ -17,7 +17,7 @@ def scheduled_function(myTimer: func.TimerRequest) -> None:
         "input_dir": os.getenv("INPUT_DIR", ""),
         "pub_days_per_nurse": int(os.getenv("PUB_DAYS_PER_NURSE", 0)),
         "fte_uos_threshold": float(os.getenv("FTE_UOS_THRESHOLD", 0)),
-        "days": int(os.getenv("FTE_UOS_THRESHOLD", 0)),
+        "days": int(os.getenv("DAYS", 0)),
         "max_time": float(os.getenv("MAX_TIME", 60)),
     }
     solve(**solve_parameters)  # Call your script logic
