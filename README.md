@@ -3,7 +3,9 @@
 **A constraint-based nurse scheduling optimization system for hospital
 inpatient departments.**
 
-This solver generates monthly nurse rosters that satisfy complex staffing requirements, respect nurse preferences, and maintain safe patient-to-staff ratios using Google OR-Tools CP-SAT.
+This solver generates monthly nurse rosters that satisfy complex staffing
+requirements, respect nurse preferences, and maintain safe patient-to-staff
+ratios using Google OR-Tools CP-SAT.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -13,7 +15,7 @@ This solver generates monthly nurse rosters that satisfy complex staffing requir
 
 The solver enforces the following hard constraints using constraint programming:
 
-**1. One Shift Per Nurse Per Day**
+1. One Shift Per Nurse Per Day
 
 Each nurse is assigned exactly one shift (including off-days) per day.
 
@@ -21,7 +23,7 @@ Each nurse is assigned exactly one shift (including off-days) per day.
 \sum_{s \in S} x_{n,d,s} = 1 \quad \forall n \in N, d \in D
 ```
 
-**2. Minimum Daily Staffing**
+1. Minimum Daily Staffing
 
 At least one working nurse (non-off shift) must be scheduled each day.
 
@@ -324,7 +326,7 @@ python solver.py \
 
 - `--config`: Name of configuration file in `configs/` (without `.py` extension)
 - `--input_dir`: Directory containing input CSV files
-- `--pub_days_per_nurse`: Number of public holiday shifts each nurse must work this month
+- `--pub_days_per_nurse`: Number of public holiday allowed for each nurse this month
 - `--fte_uos_threshold`: FTE-UOS ratio threshold for soft hours cap (monthly hours target = beds_sum × threshold × 8)
 - `--days`: Number of days in the month (28, 29, 30, or 31)
 - `--maxtime`: Maximum solver time in seconds per stage (default: 60)
@@ -542,13 +544,3 @@ Contributions are welcome! Areas for improvement:
 
 - Built with [Google OR-Tools](https://developers.google.com/optimization)
 - Constraint programming approach inspired by nurse rostering literature
-
----
-
-**Fun Name Suggestions:**
-
-- 🚦 **Nurse Traffic Control** - Managing nurse flow like air traffic
-- 🎵 **Nurse Conductor** - Orchestrating perfect schedules
-- ⚡ **ShiftCraft** - Crafting optimal shifts
-- 🧠 **RosterGenius** - Smart scheduling
-- 🎯 **ShiftMaster** - Master your scheduling
