@@ -881,32 +881,9 @@ def multi_seed_best_roster(
     return best_roster, best_score
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="ipd_nurse")
-    parser.add_argument(
-        "--input_dir",
-        default=None,
-        help="Directory with nurses.csv, preferences.csv",
-    )
-    parser.add_argument(
-        "--pub_days_per_nurse",
-        type=int,
-        required=True,
-        help="Number of public holiday of this month",
-    )
-    parser.add_argument(
-        "--fte_uos_threshold",
-        type=float,
-        required=True,
-        help="FTE/UOS cap of this month",
-    )
-    parser.add_argument("--days", type=int, default=31)
-    parser.add_argument("--max_time", type=float, default=60.0)
-    args = parser.parse_args()
-
-    cfg = load_config(args.config)
-    input_dir = args.input_dir or os.path.join("mock_data", args.config)
+def solve(config, input_dir, pub_days_per_nurse, fte_uos_threshold, days, max_time):
+    cfg = load_config(config)
+    input_dir = input_dir or os.path.join("mock_data", config)
 
     nurses_path = os.path.join(input_dir, "nurses.csv")
     nurses_df = pd.read_csv(nurses_path)
@@ -918,15 +895,15 @@ def main():
         nurses_df,
         beds_df,
         input_dir=input_dir,
-        month_days=args.days,
-        pub_days_per_nurse=args.pub_days_per_nurse,
-        fte_uos_threshold=args.fte_uos_threshold,
-        days=args.days,
-        max_time_sec=args.max_time,
+        month_days=days,
+        pub_days_per_nurse=pub_days_per_nurse,
+        fte_uos_threshold=fte_uos_threshold,
+        days=days,
+        max_time_sec=max_time,
         num_seeds=10,
     )
 
-    ok = validate_roster(roster_df, nurses_df, beds_df, cfg, args.days)
+    ok = validate_roster(roster_df, nurses_df, beds_df, cfg, days)
     if not ok:
         exit()
 
@@ -939,7 +916,7 @@ def main():
     flag_over_240 = (merged["exceed_hours"] > 240).astype(int)
 
     # Column order
-    day_cols = [str(d) for d in range(1, args.days + 1)]
+    day_cols = [str(d) for d in range(1, days + 1)]
     for d in day_cols:
         merged[d] = merged[d].replace("R", "X")
 
@@ -965,7 +942,7 @@ def main():
 
         # Block headcount sheet
         block_rows = []
-        for day in range(1, args.days + 1):
+        for day in range(1, days + 1):
             col = str(day)
             for block in cfg.TIME_BLOCKS:
                 total = 0
@@ -992,12 +969,12 @@ def main():
         bc["val"] = bc["total"].astype(str) + " (" + bc["RN"].astype(str) + ", " + bc["PN"].astype(str) + ")"
         bc.set_index(["block", "day"])["val"].unstack().to_excel(writer, sheet_name="BlockCoverage")
 
-        shift_stats = roster_df[list(str(s) for s in range(1, args.days + 1))].stack().value_counts()
+        shift_stats = roster_df[list(str(s) for s in range(1, days + 1))].stack().value_counts()
         shift_stats.to_excel(writer, sheet_name="ShiftStatistics")
 
         prefs_path = os.path.join(input_dir, "preferences.csv")
         prefs_df = pd.read_csv(prefs_path)
-        request_stats, denied_rows = compute_request_stats(roster_df, prefs_df, args.days)
+        request_stats, denied_rows = compute_request_stats(roster_df, prefs_df, days)
         request_stats.to_excel(writer, sheet_name="request summary")
         denied_rows.to_excel(writer, sheet_name="denied requests")
 
@@ -1009,5 +986,34 @@ def main():
     print(f"Roster written to {out_path}")
 
 
+def command_line_entry_point():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default="ipd_nurse")
+    parser.add_argument(
+        "--input_dir",
+        default=None,
+        help="Directory with nurses.csv, preferences.csv",
+    )
+    parser.add_argument(
+        "--pub_days_per_nurse",
+        type=int,
+        required=True,
+        help="Number of public holiday of this month",
+    )
+    parser.add_argument(
+        "--fte_uos_threshold",
+        type=float,
+        required=True,
+        help="FTE/UOS cap of this month",
+    )
+    parser.add_argument("--days", type=int, default=31)
+    parser.add_argument("--max_time", type=float, default=60.0)
+    args = parser.parse_args()
+
+    solve(**vars(args))
+
+    # solve(args.config, args.input_dir, args.pub_days_per_nurse, args.fte_uos_threshold, args.days, args.max_time)
+
+
 if __name__ == "__main__":
-    main()
+    command_line_entry_point()

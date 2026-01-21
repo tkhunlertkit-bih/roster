@@ -3,7 +3,6 @@ import pandas as pd
 
 def has_forbidden_transitions_for_nurse(roster_df, cfg, nurse_idx, days):
     row = roster_df.iloc[nurse_idx]
-    nid = row["nurse_id"]
     forbidden_next = cfg.FORBIDDEN_NEXT
 
     for d in range(1, days):
