@@ -113,7 +113,7 @@ The solver minimizes a weighted objective function:
 where:
 
 - $\text{excess}_n = \max(0, \text{hours}_n - 184)$: hours beyond baseline
-- $\text{denied\_X}_n$: count of denied day-off requests (R or X preferences)
+- $\text{denied}\_\text{X}_n$: count of denied day-off requests (R or X preferences)
 - $\text{penalty}_n$: count of other unmatched shift preferences
 - $\bar{P}$: average penalty across nurses with preferences
 - Target FTE-UOS hours: $\text{beds\_sum} \times \text{fte\_uos\_threshold} \times 8$
