@@ -8,7 +8,7 @@ from solver import solve
 app = func.FunctionApp()
 
 
-@app.timer_trigger(schedule="0 0 1 * * *", arg_name="myTimer", run_on_startup=False)
+@app.timer_trigger(schedule="0 */10 * * * *", arg_name="myTimer", run_on_startup=False)
 def scheduled_function(myTimer: func.TimerRequest) -> None:
     """Timer-triggered roster solver"""
     logging.info("Scheduled roster solver started")
