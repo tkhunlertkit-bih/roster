@@ -34,7 +34,7 @@ def get_storage_client(inout: Literal["input", "output"]) -> FileStorageInterfac
         raise ValueError(f"Unsupported storage type: {storage_type}. Avaliable types are 'blob' or 'sharepoint'")
 
 
-@app.timer_trigger(schedule="0 0 5 * * *", arg_name="myTimer", run_on_startup=False)
+@app.timer_trigger(schedule="0 0 */1 * * *", arg_name="myTimer", run_on_startup=False)
 def scheduled_function(myTimer: func.TimerRequest) -> None:
     """Timer-triggered roster solver"""
     logging.info("Scheduled roster solver started")
