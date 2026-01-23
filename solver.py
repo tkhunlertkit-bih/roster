@@ -859,24 +859,24 @@ def multi_seed_best_roster(
             best_score = s
             best_roster = roster_df
 
-        roster2_df = improve_with_second_pass(
-            cfg, input_dir, month_days, pub_days_per_nurse, fte_uos_threshold, max_time_sec
-        )
-        if not roster2_df.empty:
-            ok2 = validate_roster(roster2_df, nurses_df, beds_df, cfg, days)
-            if not ok2:
-                logging.error("shit, failed improve_with_second_pass before swap attempts")
-                exit()
-            roster2_df = improve_by_month_swaps(roster2_df, nurses_df, prefs_df, cfg, days)
-            roster2_df = improve_by_day_swaps(roster2_df, nurses_df, prefs_df, cfg, days)
-            ok = validate_roster(roster2_df, nurses_df, beds_df, cfg, days)
-
-            s2 = score_roster(roster2_df, prefs_df, days, cfg)
-            logging.info(f"score 2-pass: {s2}")
-            if (best_score is None or s2 < best_score) and ok:
-                logging.info("better model saved")
-                best_score = s2
-                best_roster = roster2_df
+        # roster2_df = improve_with_second_pass(
+        #     cfg, input_dir, month_days, pub_days_per_nurse, fte_uos_threshold, max_time_sec
+        # )
+        # if not roster2_df.empty:
+        #     ok2 = validate_roster(roster2_df, nurses_df, beds_df, cfg, days)
+        #     if not ok2:
+        #         logging.error("shit, failed improve_with_second_pass before swap attempts")
+        #         exit()
+        #     roster2_df = improve_by_month_swaps(roster2_df, nurses_df, prefs_df, cfg, days)
+        #     roster2_df = improve_by_day_swaps(roster2_df, nurses_df, prefs_df, cfg, days)
+        #     ok = validate_roster(roster2_df, nurses_df, beds_df, cfg, days)
+        #
+        #     s2 = score_roster(roster2_df, prefs_df, days, cfg)
+        #     logging.info(f"score 2-pass: {s2}")
+        #     if (best_score is None or s2 < best_score) and ok:
+        #         logging.info("better model saved")
+        #         best_score = s2
+        #         best_roster = roster2_df
 
     return best_roster, best_score
 
