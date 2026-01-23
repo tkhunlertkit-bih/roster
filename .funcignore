@@ -1,7 +1,9 @@
 .git*
+.git/
 .vscode
 local.settings.json
 .venv
+.venv/
 .python_packages
 test
 __pycache__/
