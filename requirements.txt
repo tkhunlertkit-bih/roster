@@ -1,4 +1,8 @@
 azure-functions
+azure-functions-worker
+azure-identity
+azure-storage-blob
+msgraph-sdk
 openpyxl
 ortools
 pandas

@@ -936,54 +936,48 @@ def solve(config, input_dir, pub_days_per_nurse, fte_uos_threshold, days, max_ti
     for d in day_cols:
         final_df[d] = merged[d]
 
-    out_path = os.path.join(input_dir, "roster_output.xlsx")
-    with pd.ExcelWriter(out_path, engine="xlsxwriter") as writer:
-        final_df.to_excel(writer, index=False, sheet_name="Roster")
+    # Block headcount sheet
+    block_rows = []
+    for day in range(1, days + 1):
+        col = str(day)
+        for block in cfg.TIME_BLOCKS:
+            total = 0
+            rn = 0
+            pn = 0
+            for _, row in merged.iterrows():
+                shift = row[col]
+                if block in cfg.SHIFT_BLOCKS.get(shift, []):
+                    total += 1
+                    if row["skill"] == "RN":
+                        rn += 1
+                    elif row["skill"] == "PN":
+                        pn += 1
+            block_rows.append(
+                {
+                    "day": day,
+                    "block": block,
+                    "total": total,
+                    "RN": rn,
+                    "PN": pn,
+                }
+            )
+    bc = pd.DataFrame(block_rows)
+    bc["val"] = bc["total"].astype(str) + " (" + bc["RN"].astype(str) + ", " + bc["PN"].astype(str) + ")"
+    bc = bc.set_index(["block", "day"])["val"].unstack().reset_index()
+    shift_stats = roster_df[list(str(s) for s in range(1, days + 1))].stack().value_counts().reset_index()
 
-        # Block headcount sheet
-        block_rows = []
-        for day in range(1, days + 1):
-            col = str(day)
-            for block in cfg.TIME_BLOCKS:
-                total = 0
-                rn = 0
-                pn = 0
-                for _, row in merged.iterrows():
-                    shift = row[col]
-                    if block in cfg.SHIFT_BLOCKS.get(shift, []):
-                        total += 1
-                        if row["skill"] == "RN":
-                            rn += 1
-                        elif row["skill"] == "PN":
-                            pn += 1
-                block_rows.append(
-                    {
-                        "day": day,
-                        "block": block,
-                        "total": total,
-                        "RN": rn,
-                        "PN": pn,
-                    }
-                )
-        bc = pd.DataFrame(block_rows)
-        bc["val"] = bc["total"].astype(str) + " (" + bc["RN"].astype(str) + ", " + bc["PN"].astype(str) + ")"
-        bc.set_index(["block", "day"])["val"].unstack().to_excel(writer, sheet_name="BlockCoverage")
+    prefs_path = os.path.join(input_dir, "preferences.csv")
+    prefs_df = pd.read_csv(prefs_path)
+    request_stats, denied_rows = compute_request_stats(roster_df, prefs_df, days)
 
-        shift_stats = roster_df[list(str(s) for s in range(1, days + 1))].stack().value_counts()
-        shift_stats.to_excel(writer, sheet_name="ShiftStatistics")
-
-        prefs_path = os.path.join(input_dir, "preferences.csv")
-        prefs_df = pd.read_csv(prefs_path)
-        request_stats, denied_rows = compute_request_stats(roster_df, prefs_df, days)
-        request_stats.to_excel(writer, sheet_name="request summary")
-        denied_rows.to_excel(writer, sheet_name="denied requests")
-
-        print(shift_stats)
-        print(request_stats)
-        print(denied_rows)
-        print(score)
-
-    print(f"Roster written to {out_path}")
+    res = {
+        "Roster": final_df,
+        "Block Coverage": bc,
+        "Shift Statistics": shift_stats,
+        "Request Summary": request_stats.reset_index(),
+        "Denied Requests": denied_rows.reset_index(),
+    }
+    return res
 
 
 def command_line_entry_point():
@@ -1010,9 +1004,11 @@ def command_line_entry_point():
     parser.add_argument("--max_time", type=float, default=60.0)
     args = parser.parse_args()
 
-    solve(**vars(args))
-
-    # solve(args.config, args.input_dir, args.pub_days_per_nurse, args.fte_uos_threshold, args.days, args.max_time)
+    res = solve(**vars(args))
+    out_path = os.path.join(args.input_dir, "roster_output.xlsx")
+    with pd.ExcelWriter(out_path, engine="xlsxwriter") as writer:
+        for sheet_name, data in res.items():
+            data.to_excel(writer, index=False, sheet_name=sheet_name)
 
 
 if __name__ == "__main__":
