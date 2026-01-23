@@ -1,3 +1,5 @@
+import logging
+
 import pandas as pd
 
 
@@ -137,7 +139,7 @@ def improve_by_month_swaps(roster_df, nurses_df, prefs_df, cfg, days, max_passes
                 a_valid = not has_forbidden_transitions_for_nurse(roster_df, cfg, idx_a, days)
                 b_valid = not has_forbidden_transitions_for_nurse(roster_df, cfg, idx_b, days)
                 if (new > cur) and a_valid and b_valid:
-                    print(f"swapping the whole month round {round} ::{nid_a} <--> {nid_b}")
+                    logging.info(f"swapping the whole month round {round} ::{nid_a} <--> {nid_b}")
                     improved_any = True  # keep swap
                 else:
                     # revert

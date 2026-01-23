@@ -1,6 +1,7 @@
 # solver.py
 import argparse
 import importlib
+import logging
 import math
 import os
 from typing import Any, Dict, List
@@ -634,7 +635,7 @@ def solve_month_with_solution(
     status = solver.Solve(model)
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        print(status)
+        logging.info(status)
         raise RuntimeError("No feasible solution found")
 
     data: Dict[str, List[str]] = {"nurse_id": list(nurses_df["nurse_id"])}
@@ -757,13 +758,13 @@ def lexicographic_solve(cfg, input_dir, month_days, pub_days_per_nurse, fte_uos_
     _, _, _, _, _, _, _, _, min_x_denial, roster_df = solve_stage1_min_x(
         cfg, input_dir, month_days, pub_days_per_nurse, max_time_sec
     )
-    print(f"min_x_denials: {min_x_denial}")
+    logging.info(f"min_x_denials: {min_x_denial}")
     try:
         roster_df = solve_stage2_with_x_bound(
             cfg, input_dir, month_days, pub_days_per_nurse, fte_uos_threshold, max_time_sec, min_x_denial + 5
         )
     except RuntimeError:
-        print("unable to solve 2, reverting back to solve 1 solution")
+        logging.error("unable to solve 2, reverting back to solve 1 solution")
     return roster_df
 
 
@@ -836,7 +837,7 @@ def multi_seed_best_roster(
     best_roster = pd.DataFrame()
 
     for seed in range(num_seeds):
-        print(f"iteration: {seed}")
+        logging.info(f"iteration: {seed}")
         # set seed before each solve
         # cp_solver = cp_model.CpSolver()
         # cp_solver.random_seed = seed  # you can instead set via global param if you refactor
@@ -845,16 +846,16 @@ def multi_seed_best_roster(
         roster_df = lexicographic_solve(cfg, input_dir, month_days, pub_days_per_nurse, fte_uos_threshold, max_time_sec)
         ok1 = validate_roster(roster_df, nurses_df, beds_df, cfg, days)
         if not ok1:
-            print("shit, failed lexicographic before swap attempts")
+            logging.error("shit, failed lexicographic before swap attempts")
             exit()
         roster_df = improve_by_month_swaps(roster_df, nurses_df, prefs_df, cfg, days)
         roster_df = improve_by_day_swaps(roster_df, nurses_df, prefs_df, cfg, days)
         ok = validate_roster(roster_df, nurses_df, beds_df, cfg, days)
 
         s = score_roster(roster_df, prefs_df, days, cfg)
-        print(f"score lexico: {s}")
+        logging.info(f"score lexico: {s}")
         if (best_score is None or s < best_score) and ok:
-            print("better model saved")
+            logging.info("better model saved")
             best_score = s
             best_roster = roster_df
 
@@ -864,19 +865,18 @@ def multi_seed_best_roster(
         if not roster2_df.empty:
             ok2 = validate_roster(roster2_df, nurses_df, beds_df, cfg, days)
             if not ok2:
-                print("shit, failed improve_with_second_pass before swap attempts")
+                logging.error("shit, failed improve_with_second_pass before swap attempts")
                 exit()
             roster2_df = improve_by_month_swaps(roster2_df, nurses_df, prefs_df, cfg, days)
             roster2_df = improve_by_day_swaps(roster2_df, nurses_df, prefs_df, cfg, days)
             ok = validate_roster(roster2_df, nurses_df, beds_df, cfg, days)
 
             s2 = score_roster(roster2_df, prefs_df, days, cfg)
-            print(f"score 2-pass: {s2}")
+            logging.info(f"score 2-pass: {s2}")
             if (best_score is None or s2 < best_score) and ok:
-                print("better model saved")
+                logging.info("better model saved")
                 best_score = s2
                 best_roster = roster2_df
-        print()
 
     return best_roster, best_score
 

@@ -34,10 +34,13 @@ def get_storage_client(inout: Literal["input", "output"]) -> FileStorageInterfac
         raise ValueError(f"Unsupported storage type: {storage_type}. Avaliable types are 'blob' or 'sharepoint'")
 
 
-@app.timer_trigger(schedule="0 0 */1 * * *", arg_name="myTimer", run_on_startup=False)
-def scheduled_function(myTimer: func.TimerRequest) -> None:
-    """Timer-triggered roster solver"""
-    logging.info("Scheduled roster solver started")
+def generate_roster():
+    """
+    Main logic to generate the roster from the configuration.
+
+    Raises:
+        Error of various kinds
+    """
     try:
         input_storage = get_storage_client("input")
         output_storage = get_storage_client("output")
@@ -53,25 +56,38 @@ def scheduled_function(myTimer: func.TimerRequest) -> None:
             nurses_df.to_csv(os.path.join(temp_dir, "nurses.csv"), index=False)
             preferences_df.to_csv(os.path.join(temp_dir, "preferences.csv"), index=False)
             beds_df.to_csv(os.path.join(temp_dir, "beds_per_day.csv"), index=False)
+            logging.debug(f"temp dir location: {temp_dir}")
+            logging.debug(f"Temp dir contents: {os.listdir(temp_dir)}")
 
-        # Run solver
-        logging.info("Running solver...")
-        solve_parameters = {
-            "config": os.environ["CONFIG_NAME"],
-            "input_dir": temp_dir,
-            "pub_days_per_nurse": int(os.environ["PUB_DAYS_PER_NURSE"]),
-            "fte_uos_threshold": float(os.environ["FTE_UOS_THRESHOLD"]),
-            "days": int(os.environ["DAYS"]),
-            "max_time": float(os.getenv("MAX_TIME", 60)),
-        }
-        res = solve(**solve_parameters)  # Call your script logic
-        logging.info(f"Solver completed for {os.environ['CONFIG_NAME']}")
+            # Run solver
+            logging.info("Running solver...")
+            solve_parameters = {
+                "config": os.environ["CONFIG_NAME"],
+                "input_dir": temp_dir,
+                "pub_days_per_nurse": int(os.environ["PUB_DAYS_PER_NURSE"]),
+                "fte_uos_threshold": float(os.environ["FTE_UOS_THRESHOLD"]),
+                "days": int(os.environ["DAYS"]),
+                "max_time": float(os.getenv("MAX_TIME", 60)),
+            }
+            res = solve(**solve_parameters)  # Call your script logic
+            logging.info(f"Solver completed for {os.environ['CONFIG_NAME']}")
         output_storage.write_excel("roster.xlsx", **res)
     except Exception as e:
         logging.error(f"Error in roster generation: {str(e)}", exc_info=True)
         raise
 
 
+@app.timer_trigger(schedule="0 0 */1 * * *", arg_name="myTimer", run_on_startup=False)
+def scheduled_function(myTimer: func.TimerRequest) -> None:
+    """Timer-triggered roster solver"""
+    logging.info("Scheduled roster solver started")
+    generate_roster()
+
+
 @app.route(route="run-solver", methods=["POST", "GET"], auth_level=func.AuthLevel.FUNCTION)
 def manual_solver(req: func.HttpRequest) -> func.HttpResponse:
-    return func.HttpResponse("Solver place holder", status_code=500)
+    try:
+        generate_roster()
+        return func.HttpResponse("Completed", status_code=200)
+    except:
+        return func.HttpResponse("Internal error", status_code=500)

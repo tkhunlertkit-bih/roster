@@ -1,3 +1,6 @@
+import logging
+
+
 def validate_roster(roster_df, nurses_df, beds_df, cfg, days):
     """
     Returns (ok: bool, errors: List[str]) for hard rules:
@@ -152,7 +155,7 @@ def validate_roster(roster_df, nurses_df, beds_df, cfg, days):
 
     ok = len(errors) == 0
     if not ok:
-        print("HARD RULE(S) VIOLATION:")
+        logging.warning("HARD RULE(S) VIOLATION:")
         for e in errors:
-            print("  -", e)
+            logging.warning("  -", e)
     return ok

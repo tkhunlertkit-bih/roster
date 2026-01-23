@@ -2,3 +2,5 @@ Session.vim
 .conda_config
 mock_data/*
 **/__pycache__/**
+local.settings.json
+.venv/*
